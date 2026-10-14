@@ -105,8 +105,15 @@ export function dueCounts(items, today) {
   return { overdue, dueToday };
 }
 
+// Cut to n characters without splitting an emoji in half.
+export function clip(s, n) {
+  const chars = Array.from(s);
+  return chars.length > n ? chars.slice(0, n).join('') : s;
+}
+
 export function cleanCategoryName(name) {
-  return String(name ?? '').trim().replace(/\s+/g, ' ').slice(0, MAX_CATEGORY);
+  const s = String(name ?? '').replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').trim().replace(/\s+/g, ' ');
+  return clip(s, MAX_CATEGORY).trim();
 }
 
 export function categoryNameTaken(list, name, exceptId = null) {
@@ -145,16 +152,20 @@ export function validateState(s) {
 export function migrate(s) {
   if (!s || typeof s !== 'object') return s;
   if (s.version === SCHEMA && s.lists) {
+    const seen = new Set();
     for (const l of LISTS) {
       const list = s.lists[l];
       if (!list || !Array.isArray(list.categories) || !Array.isArray(list.items)) continue;
       const ids = new Set(list.categories.map((c) => c?.id));
       for (const i of list.items) {
         if (!i || typeof i !== 'object') continue;
-        if (i.categoryId && !ids.has(i.categoryId)) i.categoryId = null;
+        if (!i.categoryId || !ids.has(i.categoryId)) i.categoryId = null;
         i.notes ??= '';
-        i.due ??= null;
+        if (!i.due || l !== 'todo') i.due = null;
         i.doneAt ??= null;
+        // Duplicate ids (e.g. a hand-edited backup) would make one delete remove several items.
+        if (seen.has(i.id)) i.id = uid();
+        seen.add(i.id);
       }
     }
   }
@@ -170,15 +181,24 @@ export function escapeHtml(s) {
 const URL_RE = /\b(?:https?:\/\/|www\.)[^\s<>"']+/gi;
 
 // Trailing punctuation usually ends the sentence, not the link. A ")" is kept when it closes a "(" inside the URL
-// (e.g. https://en.wikipedia.org/wiki/Foo_(bar)).
+// (e.g. https://en.wikipedia.org/wiki/Foo_(bar)). Single pass from the end, so huge pasted text stays fast.
 function trimUrl(u) {
-  for (;;) {
-    const t = u.replace(/[.,;:!?\]]+$/, '');
-    const opens = (t.match(/\(/g) || []).length;
-    const closes = (t.match(/\)/g) || []).length;
-    if (t.endsWith(')') && closes > opens) u = t.slice(0, -1);
-    else return t;
+  let opens = 0;
+  let closes = 0;
+  for (const ch of u) {
+    if (ch === '(') opens++;
+    else if (ch === ')') closes++;
   }
+  let end = u.length;
+  while (end > 0) {
+    const ch = u[end - 1];
+    if ('.,;:!?]'.includes(ch)) end--;
+    else if (ch === ')' && closes > opens) {
+      closes--;
+      end--;
+    } else break;
+  }
+  return u.slice(0, end);
 }
 
 export function findLinks(text) {

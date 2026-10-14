@@ -24,13 +24,14 @@ const today = () => M.dateStr(new Date());
 function change(mutate, message = '', undoable = false) {
   const before = JSON.stringify(state);
   mutate();
-  if (!Store.save(state)) toast('⚠️ Could not save. Export a backup from Settings.');
+  if (!Store.save(state)) toast(SAVE_FAILED, null, true);
   else if (message) toast(message, undoable ? before : null);
   else if (undoSnapshot) hideToast(); // an older Undo would now also revert this change
   render();
 }
 
 // ---------- toast ----------
+const SAVE_FAILED = '⚠️ Could not save. Export a backup from Settings.';
 let toastTimer;
 let undoSnapshot = null;
 function hideToast() {
@@ -38,12 +39,15 @@ function hideToast() {
   undoSnapshot = null;
   $('#toast').classList.remove('show');
 }
-function toast(msg, snapshot = null) {
-  // The open dialog covers the toast, so show plain messages inside the dialog instead.
+// isError: while the item dialog is open (it covers the toast), errors show inside it and other messages are skipped.
+function toast(msg, snapshot = null, isError = false) {
   if (dialog.open && !snapshot) {
-    const err = $('#form-error');
-    err.textContent = msg;
-    err.hidden = false;
+    if (undoSnapshot) hideToast(); // an older Undo would now also revert this change
+    if (isError) {
+      const err = $('#form-error');
+      err.textContent = msg;
+      err.hidden = false;
+    }
     return;
   }
   undoSnapshot = snapshot;
@@ -63,7 +67,7 @@ $('#toast-undo').addEventListener('click', () => {
   const restored = JSON.parse(undoSnapshot);
   undoSnapshot = null;
   state = restored;
-  if (!Store.save(state)) toast('⚠️ Could not save. Export a backup from Settings.');
+  if (!Store.save(state)) toast(SAVE_FAILED, null, true);
   else toast('Undone');
   render();
 });
@@ -186,7 +190,7 @@ function row(i, l, cats, t) {
 
 function renderSettings() {
   const last = Store.lastBackup();
-  const ago = last ? Math.floor((Date.now() - last) / 86400000) : null;
+  const ago = last ? M.daysUntil(today(), M.dateStr(new Date(last))) : null;
   const lastText = last == null ? 'Never backed up.' : ago === 0 ? 'Last backup: today.' : `Last backup: ${ago} day${ago === 1 ? '' : 's'} ago.`;
   const catCard = (l) => {
     const list = state.lists[l];
@@ -318,10 +322,10 @@ form.elements.category.addEventListener('change', (ev) => {
 
 form.addEventListener('submit', (ev) => {
   ev.preventDefault();
-  const title = form.elements.title.value.trim().slice(0, M.MAX_TITLE);
+  const title = M.clip(form.elements.title.value.trim(), M.MAX_TITLE);
   if (!title) {
     form.elements.title.focus();
-    toast('Give it a name first');
+    toast('Give it a name first', null, true);
     return;
   }
   const { list: l, id } = editing;
@@ -335,13 +339,13 @@ form.addEventListener('submit', (ev) => {
     notes: form.elements.notes.value.trim(),
     due: l === 'todo' && M.isDateStr(due) ? due : null,
   };
+  dialog.close();
   if (id) {
     const item = list.items.find((i) => i.id === id);
     if (item) change(() => Object.assign(item, fields));
   } else {
     change(() => list.items.push({ id: M.uid(), ...fields, createdAt: Date.now(), doneAt: null }), `Added to ${TEXT[l].title}`);
   }
-  dialog.close();
 });
 
 $('#item-delete').addEventListener('click', () => {
@@ -358,7 +362,7 @@ function addCategory(l) {
   const name = M.cleanCategoryName(prompt(`New ${TEXT[l].title} category`));
   if (!name) return null;
   if (M.categoryNameTaken(list, name)) {
-    toast(`“${name}” already exists`);
+    toast(`“${name}” already exists`, null, true);
     return null;
   }
   const id = M.uid();
@@ -372,7 +376,7 @@ function renameCategory(l, id) {
   if (!cat) return;
   const name = M.cleanCategoryName(prompt('Rename category', cat.name));
   if (!name || name === cat.name) return;
-  if (M.categoryNameTaken(list, name, id)) return toast(`“${name}” already exists`);
+  if (M.categoryNameTaken(list, name, id)) return toast(`“${name}” already exists`, null, true);
   change(() => (cat.name = name));
 }
 
@@ -437,7 +441,7 @@ document.addEventListener('click', async (ev) => {
       const r = await Store.exportRecoveryCopy(b.dataset.key, today());
       if (r !== 'cancelled') toast('Copy exported');
     } catch (e) {
-      toast(e.message);
+      toast(e.message, null, true);
     }
   } else if (a === 'delete-copy') {
     if (!confirm('Delete this recovery copy permanently? Export it first if you might need it.')) return;
@@ -448,7 +452,7 @@ document.addEventListener('click', async (ev) => {
       const r = await Store.exportBackup(state, today());
       if (r !== 'cancelled') toast('Backup exported');
     } catch (e) {
-      toast(e.message);
+      toast(e.message, null, true);
     }
     render();
   }
@@ -484,11 +488,11 @@ document.addEventListener('change', async (ev) => {
     Store.keepSafetyCopy(state, 'import');
     state = imported;
     recovered = false;
-    if (!Store.save(state)) toast('⚠️ Could not save. Export a backup from Settings.');
+    if (!Store.save(state)) toast(SAVE_FAILED, null, true);
     else toast('Backup imported');
     render();
   } catch (e) {
-    toast(e.message);
+    toast(e.message, null, true);
   }
 });
 

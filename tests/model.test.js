@@ -111,3 +111,30 @@ test('linkify escapes HTML and links only http(s)/www', () => {
   assert.deepEqual(M.findLinks('(https://en.wikipedia.org/wiki/Foo_(bar))'), ['https://en.wikipedia.org/wiki/Foo_(bar)']);
   assert.deepEqual(M.findLinks('a.com x https://a.com.)'), ['https://a.com']);
 });
+
+test('link trimming stays fast on huge pasted text', () => {
+  for (const tail of ['.', ')']) {
+    const t0 = Date.now();
+    M.findLinks('https://a.com/x' + tail.repeat(200000));
+    M.linkify('https://a.com/x' + tail.repeat(200000));
+    assert.ok(Date.now() - t0 < 500, `slow on trailing "${tail}"`);
+  }
+});
+
+test('clip never splits an emoji; category names drop zero-width characters', () => {
+  assert.equal(M.clip('a'.repeat(119) + '😀x', 120), 'a'.repeat(119) + '😀');
+  assert.equal(M.cleanCategoryName('a'.repeat(29) + '😀😀'), 'a'.repeat(29) + '😀');
+  assert.equal(M.cleanCategoryName('Tech​'), 'Tech');
+});
+
+test('migrate repairs common backup quirks instead of rejecting the file', () => {
+  const s = M.newState();
+  s.lists.todo.items.push({ id: 'd', title: 'A', priority: 1, notes: '', due: '', createdAt: 1, doneAt: null });
+  s.lists.shop.items.push({ id: 'd', title: 'B', priority: 2, categoryId: null, notes: '', due: '2026-10-14', createdAt: 1, doneAt: null });
+  M.migrate(s);
+  assert.ok(M.validateState(s));
+  assert.equal(s.lists.todo.items[0].categoryId, null);
+  assert.equal(s.lists.todo.items[0].due, null);
+  assert.equal(s.lists.shop.items[0].due, null);
+  assert.notEqual(s.lists.todo.items[0].id, s.lists.shop.items[0].id);
+});
