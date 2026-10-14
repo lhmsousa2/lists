@@ -169,9 +169,16 @@ export function escapeHtml(s) {
 
 const URL_RE = /\b(?:https?:\/\/|www\.)[^\s<>"']+/gi;
 
-// Trailing punctuation usually ends the sentence, not the link.
+// Trailing punctuation usually ends the sentence, not the link. A ")" is kept when it closes a "(" inside the URL
+// (e.g. https://en.wikipedia.org/wiki/Foo_(bar)).
 function trimUrl(u) {
-  return u.replace(/[.,;:!?)\]]+$/, '');
+  for (;;) {
+    const t = u.replace(/[.,;:!?\]]+$/, '');
+    const opens = (t.match(/\(/g) || []).length;
+    const closes = (t.match(/\)/g) || []).length;
+    if (t.endsWith(')') && closes > opens) u = t.slice(0, -1);
+    else return t;
+  }
 }
 
 export function findLinks(text) {

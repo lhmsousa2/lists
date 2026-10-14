@@ -20,9 +20,9 @@ export function load() {
     } catch {
       /* fall through */
     }
-    // Never silently overwrite data we couldn't read: keep the raw copy aside.
+    // Never silently overwrite data we couldn't read: keep the raw copy aside (once), reachable from Settings.
     try {
-      localStorage.setItem(`${KEY}.unreadable.${Date.now()}`, raw);
+      if (!recoveryCopies().some((c) => localStorage.getItem(c.key) === raw)) localStorage.setItem(`${KEY}.unreadable.${Date.now()}`, raw);
     } catch {
       /* storage full: nothing more we can do */
     }
@@ -44,10 +44,45 @@ export function save(state) {
 // Keep a copy of the current data before it gets replaced by an import.
 export function keepSafetyCopy(state, label) {
   try {
-    localStorage.setItem(`${KEY}.before-${label}`, JSON.stringify(state));
+    localStorage.setItem(`${KEY}.before-${label}.${Date.now()}`, JSON.stringify(state));
   } catch {
     /* best effort */
   }
+}
+
+// Copies kept by load() (unreadable data) and keepSafetyCopy() (before an import), newest first.
+export function recoveryCopies() {
+  const out = [];
+  try {
+    for (let n = 0; n < localStorage.length; n++) {
+      const key = localStorage.key(n);
+      const m = key?.match(/^lists\.state\.v1\.(unreadable|before-import)\.(\d+)$/);
+      if (m) out.push({ key, kind: m[1], ts: Number(m[2]) });
+    }
+  } catch {
+    /* storage unavailable */
+  }
+  return out.sort((a, b) => b.ts - a.ts);
+}
+
+export function deleteRecoveryCopy(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* best effort */
+  }
+}
+
+export function exportRecoveryCopy(key, dateLabel) {
+  let raw = null;
+  try {
+    raw = localStorage.getItem(key);
+  } catch {
+    /* fall through */
+  }
+  if (raw == null) throw new Error('That copy is no longer on this phone.');
+  const kind = key.includes('.unreadable.') ? 'unreadable' : 'before-import';
+  return shareFile(`lists-${kind}-${dateLabel}.json`, raw);
 }
 
 // Ask the browser not to evict our data under storage pressure (best effort).
@@ -77,14 +112,18 @@ function markBackup() {
 }
 
 export async function exportBackup(state, dateLabel) {
-  const name = `lists-backup-${dateLabel}.json`;
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const r = await shareFile(`lists-backup-${dateLabel}.json`, JSON.stringify(state, null, 2));
+  if (r !== 'cancelled') markBackup();
+  return r;
+}
+
+async function shareFile(name, text) {
+  const blob = new Blob([text], { type: 'application/json' });
   const file = new File([blob], name, { type: 'application/json' });
   // On iPhone this opens the share sheet (Save to Files, AirDrop, etc.).
   if (navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title: name });
-      markBackup();
       return 'shared';
     } catch (e) {
       if (e.name === 'AbortError') return 'cancelled';
@@ -98,7 +137,6 @@ export async function exportBackup(state, dateLabel) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  markBackup();
   return 'downloaded';
 }
 

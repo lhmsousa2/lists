@@ -3,6 +3,8 @@ import * as M from './model.js';
 import * as Store from './store.js';
 
 const $ = (s) => document.querySelector(s);
+const dialog = $('#item-dialog');
+const form = $('#item-form');
 const esc = M.escapeHtml;
 const TEXT = {
   todo: { title: 'To-Do', one: 'task', done: 'Done', doneVerb: 'Done', emptyIcon: '✓', emptyTitle: 'Nothing to do', emptyHint: 'Tap + to add a task.' },
@@ -24,13 +26,26 @@ function change(mutate, message = '', undoable = false) {
   mutate();
   if (!Store.save(state)) toast('⚠️ Could not save. Export a backup from Settings.');
   else if (message) toast(message, undoable ? before : null);
+  else if (undoSnapshot) hideToast(); // an older Undo would now also revert this change
   render();
 }
 
 // ---------- toast ----------
 let toastTimer;
 let undoSnapshot = null;
+function hideToast() {
+  clearTimeout(toastTimer);
+  undoSnapshot = null;
+  $('#toast').classList.remove('show');
+}
 function toast(msg, snapshot = null) {
+  // The open dialog covers the toast, so show plain messages inside the dialog instead.
+  if (dialog.open && !snapshot) {
+    const err = $('#form-error');
+    err.textContent = msg;
+    err.hidden = false;
+    return;
+  }
   undoSnapshot = snapshot;
   $('#toast-text').textContent = msg;
   $('#toast-undo').hidden = !snapshot;
@@ -95,14 +110,15 @@ function render() {
 function renderList(l, t) {
   const list = state.lists[l];
   const cats = new Map(list.categories.map((c) => [c.id, c.name]));
-  if (filter[l] !== 'all' && filter[l] !== M.NO_CATEGORY && !cats.has(filter[l])) filter[l] = 'all';
+  const hasUncategorized = list.items.some((i) => !i.categoryId);
+  // Reset the filter if its chip no longer exists (category deleted, or no uncategorized items left).
+  if (filter[l] === M.NO_CATEGORY ? !hasUncategorized : filter[l] !== 'all' && !cats.has(filter[l])) filter[l] = 'all';
   const f = filter[l];
   const open = M.sortOpen(list.items);
   const done = M.sortDone(list.items);
   const shownOpen = open.filter((i) => M.matchesFilter(i, f));
   const shownDone = done.filter((i) => M.matchesFilter(i, f));
   const countFor = (id) => open.filter((i) => M.matchesFilter(i, id)).length;
-  const hasUncategorized = list.items.some((i) => !i.categoryId);
 
   const chip = (id, name) => {
     const n = countFor(id);
@@ -110,7 +126,7 @@ function renderList(l, t) {
   };
   let html = '';
   if (recovered && l === 'todo') {
-    html += `<div class="banner bad">Your saved data couldn't be read, so the app started fresh. A copy was kept on this phone. If you have a backup, import it in Settings.</div>`;
+    html += `<div class="banner bad">Your saved data couldn't be read, so the app started fresh. A copy was kept on this phone (Settings → Recovery copies). If you have a backup, import it in Settings.</div>`;
   }
   html += `<div class="chips scroll" role="toolbar" aria-label="Filter by category">
     ${chip('all', 'All')}
@@ -205,6 +221,7 @@ function renderSettings() {
         <label class="btn ghost">Import backup<input type="file" accept="application/json,.json" id="import-file" hidden></label>
       </div>
     </div>
+    ${recoveryCard()}
     <div class="card">
       <details class="howto">
         <summary><h3>Daily reminder (iPhone Shortcuts)</h3></summary>
@@ -223,9 +240,25 @@ function renderSettings() {
     <p class="muted small center">Lists · data stays on this phone</p>`;
 }
 
+// Copies of data kept aside (unreadable data found at launch, or the lists as they were before an import).
+function recoveryCard() {
+  const copies = Store.recoveryCopies();
+  if (!copies.length) return '';
+  const when = (ts) => new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return `<div class="card">
+    <h3>Recovery copies</h3>
+    <p class="muted small">Kept automatically when saved data couldn't be read, or before an import replaced your lists. Export one, then use Import backup to restore it.</p>
+    <ul class="cat-rows">
+      ${copies.map((c) => `<li>
+        <span class="cat-name">${c.kind === 'unreadable' ? 'Unreadable data' : 'Before import'} <span class="muted small">${esc(when(c.ts))}</span></span>
+        <button class="btn ghost small" data-action="export-copy" data-key="${esc(c.key)}">Export</button>
+        <button class="btn danger small" data-action="delete-copy" data-key="${esc(c.key)}" aria-label="Delete copy">✕</button>
+      </li>`).join('')}
+    </ul>
+  </div>`;
+}
+
 // ---------- item dialog ----------
-const dialog = $('#item-dialog');
-const form = $('#item-form');
 let editing = null; // { list, id } — id null when adding
 
 function fillCategorySelect(l, selected) {
@@ -263,6 +296,7 @@ function openItemDialog(l, id = null) {
   form.elements.notes.value = item?.notes ?? '';
   updateNoteLinks();
   $('#item-delete').hidden = !item;
+  $('#form-error').hidden = true;
   dialog.showModal();
   if (!item) form.elements.title.focus();
 }
@@ -270,9 +304,6 @@ function openItemDialog(l, id = null) {
 form.elements.notes.addEventListener('input', updateNoteLinks);
 $('#due-clear').addEventListener('click', () => (form.elements.due.value = ''));
 $('#item-cancel').addEventListener('click', () => dialog.close());
-dialog.addEventListener('click', (ev) => {
-  if (ev.target === dialog) dialog.close(); // tap on the dimmed backdrop
-});
 
 form.elements.category.addEventListener('change', (ev) => {
   const sel = ev.target;
@@ -401,6 +432,17 @@ document.addEventListener('click', async (ev) => {
   } else if (a === 'theme') {
     setTheme(b.dataset.theme);
     render();
+  } else if (a === 'export-copy') {
+    try {
+      const r = await Store.exportRecoveryCopy(b.dataset.key, today());
+      if (r !== 'cancelled') toast('Copy exported');
+    } catch (e) {
+      toast(e.message);
+    }
+  } else if (a === 'delete-copy') {
+    if (!confirm('Delete this recovery copy permanently? Export it first if you might need it.')) return;
+    Store.deleteRecoveryCopy(b.dataset.key);
+    render();
   } else if (a === 'export') {
     try {
       const r = await Store.exportBackup(state, today());
@@ -453,13 +495,13 @@ document.addEventListener('change', async (ev) => {
 // ---------- day changes ----------
 // Re-render when the app comes back to the foreground and at midnight, so due dates stay correct.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') render();
+  if (document.visibilityState === 'visible' && tab !== 'settings') render();
 });
 function scheduleMidnight() {
   const n = new Date();
   const next = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1, 0, 0, 5);
   setTimeout(() => {
-    render();
+    if (tab !== 'settings') render();
     scheduleMidnight();
   }, next - n);
 }

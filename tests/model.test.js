@@ -107,4 +107,7 @@ test('linkify escapes HTML and links only http(s)/www', () => {
   assert.ok(!M.linkify('javascript:alert(1)').includes('<a'));
   assert.ok(!M.linkify('https://x.com/"onmouseover="alert(1)').includes('"onmouseover'));
   assert.deepEqual(M.findLinks('a https://a.com, b (www.b.com)'), ['https://a.com', 'www.b.com']);
+  assert.deepEqual(M.findLinks('see https://en.wikipedia.org/wiki/Foo_(bar).'), ['https://en.wikipedia.org/wiki/Foo_(bar)']);
+  assert.deepEqual(M.findLinks('(https://en.wikipedia.org/wiki/Foo_(bar))'), ['https://en.wikipedia.org/wiki/Foo_(bar)']);
+  assert.deepEqual(M.findLinks('a.com x https://a.com.)'), ['https://a.com']);
 });

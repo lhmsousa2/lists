@@ -274,6 +274,7 @@ dialog::backdrop { background: rgb(0 0 0 / .4); }
 .prio-options input:focus-visible + span { outline: 2px solid var(--text); outline-offset: 2px; }
 .note-links { display: flex; flex-direction: column; gap: 6px; margin-top: -6px; font-size: 14px; }
 .note-links a { overflow-wrap: anywhere; }
+.form-error { margin: 0; padding: 9px 12px; border-radius: 10px; background: var(--bad-soft); color: var(--bad); font-size: 14px; font-weight: 600; }
 .dialog-actions { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
 .spacer { flex: 1; }
 
