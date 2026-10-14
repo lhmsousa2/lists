@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Lists</title>
+  <meta name="theme-color" content="#f3eadb" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#161412" media="(prefers-color-scheme: dark)">
+  <script>
+    // Apply saved theme before first paint (no flash). Values: system | light | dark.
+    try {
+      const t = localStorage.getItem('lists.theme');
+      if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+    } catch {}
+  </script>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Lists">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="topbar-date" id="topbar-date"></div>
+      <h1 id="topbar-title">To-Do</h1>
+    </div>
+  </header>
+
+  <main>
+    <section id="view-todo" class="view"></section>
+    <section id="view-shop" class="view" hidden></section>
+    <section id="view-settings" class="view" hidden></section>
+  </main>
+
+  <button class="fab" id="fab" aria-label="Add">+</button>
+
+  <nav class="tabbar" aria-label="Sections">
+    <button data-tab="todo" class="active">
+      <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5l1.5 1.5L8.5 5M4 12.5l1.5 1.5 3-3M4 18.5l1.5 1.5 3-3M11.5 6.5H20M11.5 12.5H20M11.5 18.5H20"/></svg>
+      To-Do<span class="tab-count" id="todo-count" hidden></span>
+    </button>
+    <button data-tab="shop">
+      <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-1.2 11.2a1 1 0 0 1-1 .8H7.2a1 1 0 0 1-1-.8zM9 8V6.5a3 3 0 0 1 6 0V8"/></svg>
+      Shopping
+    </button>
+    <button data-tab="settings">
+      <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      Settings
+    </button>
+  </nav>
+
+  <dialog id="item-dialog">
+    <form id="item-form" method="dialog" novalidate>
+      <h2 id="item-dialog-title">New task</h2>
+      <label>Name
+        <input name="title" required maxlength="120" autocomplete="off" enterkeyhint="done">
+      </label>
+      <fieldset class="prio-pick">
+        <legend>Priority <span class="opt">1 = highest</span></legend>
+        <div class="prio-options">
+          <label class="p1"><input type="radio" name="priority" value="1"><span>1</span></label>
+          <label class="p2"><input type="radio" name="priority" value="2"><span>2</span></label>
+          <label class="p3"><input type="radio" name="priority" value="3"><span>3</span></label>
+          <label class="p4"><input type="radio" name="priority" value="4"><span>4</span></label>
+        </div>
+      </fieldset>
+      <label>Category
+        <select name="category"></select>
+      </label>
+      <label id="due-field"><span class="lbl">Due date <span class="opt">optional</span></span>
+        <span class="due-row">
+          <input name="due" type="date">
+          <button type="button" class="btn ghost small" id="due-clear">Clear</button>
+        </span>
+      </label>
+      <label><span class="lbl">Notes <span class="opt">optional · links, sizes, ideas…</span></span>
+        <textarea name="notes" rows="4"></textarea>
+      </label>
+      <div class="note-links" id="note-links" hidden></div>
+      <div class="dialog-actions">
+        <button type="button" class="btn danger" id="item-delete" hidden>Delete</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" id="item-cancel">Cancel</button>
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite">
+    <span id="toast-text"></span>
+    <button type="button" id="toast-undo" hidden>Undo</button>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
